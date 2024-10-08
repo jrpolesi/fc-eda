@@ -1,15 +1,33 @@
 version: '3'
 
 services:
-  goapp: 
-    build: .
+  wallet-core-app:
+    build: ./wallet-core
     platform: linux/amd64
+    command: >
+      dockerize -wait tcp://wallet-core-mysql:3306 -wait tcp://kafka:9092 -timeout 40s go run ./cmd/api/main.go
     volumes:
-      - .:/app
+      - ./wallet-core:/app
     ports:
       - 8080:8080
+    depends_on:
+      - wallet-core-mysql
+      - kafka
 
-  mysql:
+  wallet-balance-app:
+    build: ./wallet-balance
+    platform: linux/amd64
+    command: >
+      dockerize -wait tcp://wallet-balance-mysql:3306 -wait tcp://kafka:9092 -timeout 40s go run ./cmd/api/main.go
+    volumes:
+      - ./wallet-balance:/app
+    ports:
+      - 3003:3003
+    depends_on:
+      - wallet-balance-mysql
+      - kafka
+
+  wallet-core-mysql:
     image: mysql:5.7
     platform: linux/amd64
     environment:
@@ -19,10 +37,23 @@ services:
     ports:
       - 3306:3306
     volumes:
-      - .docker/mysql:/var/lib/mysql
+      - ./wallet-core/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  wallet-balance-mysql:
+    image: mysql:5.7
+    platform: linux/amd64
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: balance
+      MYSQL_PASSWORD: root
+    ports:
+      - 3307:3306
+    volumes:
+      - ./wallet-balance/init.sql:/docker-entrypoint-initdb.d/init.sql
 
   zookeeper:
     image: "confluentinc/cp-zookeeper:6.1.0"
+    platform: linux/amd64
     container_name: zookeeper
     ports:
       - 2181:2181
@@ -34,12 +65,13 @@ services:
   kafka:
     image: "confluentinc/cp-enterprise-kafka:6.1.0"
     container_name: kafka
+    platform: linux/amd64
     depends_on:
       - zookeeper
     ports:
-    # Exposes 9092 for external connections to the broker
-    # Use kafka:29092 for connections internal on the docker network
-    # See https://rmoff.net/2018/08/02/kafka-listeners-explained/ for details
+      # Exposes 9092 for external connections to the broker
+      # Use kafka:29092 for connections internal on the docker network
+      # See https://rmoff.net/2018/08/02/kafka-listeners-explained/ for details
       - '9092:9092'
     environment:
       TZ: Sao_Paulo/Brazil
@@ -58,6 +90,7 @@ services:
   control-center:
     image: confluentinc/cp-enterprise-control-center:7.3.0
     hostname: control-center
+    platform: linux/amd64
     container_name: control-center
     depends_on:
       - kafka
@@ -70,4 +103,3 @@ services:
       CONTROL_CENTER_MONITORING_INTERCEPTOR_TOPIC_PARTITIONS: 1
       CONFLUENT_METRICS_TOPIC_REPLICATION: 1
       PORT: 9021
-  
